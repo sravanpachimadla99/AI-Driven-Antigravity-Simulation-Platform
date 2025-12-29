@@ -1,0 +1,452 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, RotateCcw, Zap, Info, Settings, Download } from 'lucide-react';
+
+const AntigravityLab = () => {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [selectedObject, setSelectedObject] = useState('sphere');
+  const [gravityStrength, setGravityStrength] = useState(9.8);
+  const [antigravityPower, setAntigravityPower] = useState(0);
+  const [objects, setObjects] = useState([]);
+  const [energy, setEnergy] = useState(0);
+  const [stability, setStability] = useState(100);
+  const [showInfo, setShowInfo] = useState(false);
+
+  // Physics simulation state
+  const simState = useRef({
+    objects: [],
+    time: 0,
+    energyConsumed: 0
+  });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    // Initialize with one test object
+    resetSimulation();
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  const resetSimulation = () => {
+    simState.current = {
+      objects: [
+        {
+          id: 1,
+          type: 'sphere',
+          x: 200,
+          y: 100,
+          vx: 0,
+          vy: 0,
+          mass: 10,
+          radius: 20,
+          color: '#3b82f6'
+        }
+      ],
+      time: 0,
+      energyConsumed: 0
+    };
+    setObjects(simState.current.objects);
+    setEnergy(0);
+    setStability(100);
+  };
+
+  const addObject = () => {
+    const newObj = {
+      id: Date.now(),
+      type: selectedObject,
+      x: Math.random() * 400 + 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+      mass: selectedObject === 'sphere' ? 10 : selectedObject === 'cube' ? 15 : 8,
+      radius: selectedObject === 'sphere' ? 20 : 25,
+      color: selectedObject === 'sphere' ? '#3b82f6' : selectedObject === 'cube' ? '#ef4444' : '#10b981'
+    };
+    simState.current.objects.push(newObj);
+    setObjects([...simState.current.objects]);
+  };
+
+  const updatePhysics = (deltaTime) => {
+    const dt = deltaTime / 1000; // Convert to seconds
+    const { objects } = simState.current;
+    
+    // Net gravity considering antigravity
+    const netGravity = gravityStrength - (antigravityPower * 0.98);
+    
+    objects.forEach(obj => {
+      // Apply gravity/antigravity
+      obj.vy += netGravity * dt;
+      
+      // Update position
+      obj.x += obj.vx * dt;
+      obj.y += obj.vy * dt;
+      
+      // Boundary collision
+      const canvas = canvasRef.current;
+      if (obj.y + obj.radius > canvas.height) {
+        obj.y = canvas.height - obj.radius;
+        obj.vy *= -0.6; // Bounce with energy loss
+      }
+      if (obj.y - obj.radius < 0) {
+        obj.y = obj.radius;
+        obj.vy *= -0.6;
+      }
+      if (obj.x + obj.radius > canvas.width) {
+        obj.x = canvas.width - obj.radius;
+        obj.vx *= -0.6;
+      }
+      if (obj.x - obj.radius < 0) {
+        obj.x = obj.radius;
+        obj.vx *= -0.6;
+      }
+    });
+
+    // Calculate energy consumption (more antigravity = more energy)
+    const energyRate = antigravityPower * objects.length * 0.1;
+    simState.current.energyConsumed += energyRate * dt;
+    setEnergy(Math.round(simState.current.energyConsumed));
+
+    // Calculate stability (based on velocity variance)
+    const avgVelocity = objects.reduce((sum, obj) => 
+      sum + Math.sqrt(obj.vx * obj.vx + obj.vy * obj.vy), 0) / objects.length;
+    const stabilityScore = Math.max(0, 100 - avgVelocity * 2);
+    setStability(Math.round(stabilityScore));
+  };
+
+  const render = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw gravity field visualization
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    if (antigravityPower > gravityStrength) {
+      gradient.addColorStop(0, 'rgba(139, 92, 246, 0.1)');
+      gradient.addColorStop(1, 'rgba(139, 92, 246, 0.05)');
+    } else {
+      gradient.addColorStop(0, 'rgba(59, 130, 246, 0.05)');
+      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.1)');
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw grid
+    ctx.strokeStyle = 'rgba(100, 116, 139, 0.2)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < canvas.width; i += 50) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, canvas.height);
+      ctx.stroke();
+    }
+    for (let i = 0; i < canvas.height; i += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(canvas.width, i);
+      ctx.stroke();
+    }
+
+    // Draw objects
+    simState.current.objects.forEach(obj => {
+      ctx.save();
+      
+      // Shadow for depth
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 5;
+
+      if (obj.type === 'cube') {
+        ctx.fillStyle = obj.color;
+        ctx.fillRect(obj.x - obj.radius, obj.y - obj.radius, obj.radius * 2, obj.radius * 2);
+      } else if (obj.type === 'pyramid') {
+        ctx.fillStyle = obj.color;
+        ctx.beginPath();
+        ctx.moveTo(obj.x, obj.y - obj.radius);
+        ctx.lineTo(obj.x + obj.radius, obj.y + obj.radius);
+        ctx.lineTo(obj.x - obj.radius, obj.y + obj.radius);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillStyle = obj.color;
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, obj.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Velocity indicator
+      if (Math.abs(obj.vx) > 0.1 || Math.abs(obj.vy) > 0.1) {
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(obj.x, obj.y);
+        ctx.lineTo(obj.x + obj.vx * 2, obj.y + obj.vy * 2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    });
+
+    // Draw antigravity field effect
+    if (antigravityPower > 0) {
+      ctx.save();
+      simState.current.objects.forEach(obj => {
+        const fieldRadius = obj.radius + antigravityPower * 3;
+        const fieldGradient = ctx.createRadialGradient(obj.x, obj.y, obj.radius, obj.x, obj.y, fieldRadius);
+        fieldGradient.addColorStop(0, 'rgba(167, 139, 250, 0.3)');
+        fieldGradient.addColorStop(1, 'rgba(167, 139, 250, 0)');
+        ctx.fillStyle = fieldGradient;
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, fieldRadius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+  };
+
+  const animate = (timestamp) => {
+    if (!isRunning) return;
+
+    const deltaTime = 16; // ~60fps
+    updatePhysics(deltaTime);
+    render();
+    
+    simState.current.time += deltaTime;
+    animationRef.current = requestAnimationFrame(animate);
+  };
+
+  useEffect(() => {
+    if (isRunning) {
+      animationRef.current = requestAnimationFrame(animate);
+    } else {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      render(); // Render one frame when paused
+    }
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isRunning, gravityStrength, antigravityPower]);
+
+  const toggleSimulation = () => {
+    setIsRunning(!isRunning);
+  };
+
+  const handleReset = () => {
+    setIsRunning(false);
+    resetSimulation();
+    setTimeout(() => render(), 100);
+  };
+
+  // AI Prediction (simplified)
+  const predictOptimal = () => {
+    const avgMass = simState.current.objects.reduce((sum, obj) => sum + obj.mass, 0) / simState.current.objects.length;
+    const optimal = (avgMass * gravityStrength) / 9.8;
+    setAntigravityPower(Math.min(10, optimal));
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            AI Antigravity Simulation Lab
+          </h1>
+          <p className="text-slate-300">Explore hypothetical gravity manipulation and test virtual structures</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Simulation Canvas */}
+          <div className="lg:col-span-2">
+            <div className="bg-slate-800 rounded-lg shadow-2xl overflow-hidden">
+              <div className="bg-slate-700 px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-yellow-400" />
+                  <span className="font-semibold">Physics Viewport</span>
+                </div>
+                <button
+                  onClick={() => setShowInfo(!showInfo)}
+                  className="p-2 hover:bg-slate-600 rounded transition-colors"
+                >
+                  <Info className="w-5 h-5" />
+                </button>
+              </div>
+              <canvas
+                ref={canvasRef}
+                className="w-full h-96 bg-slate-900"
+                style={{ imageRendering: 'crisp-edges' }}
+              />
+              
+              {/* Controls Bar */}
+              <div className="bg-slate-700 px-4 py-3 flex items-center justify-between">
+                <div className="flex gap-2">
+                  <button
+                    onClick={toggleSimulation}
+                    className={`px-4 py-2 rounded font-medium transition-colors flex items-center gap-2 ${
+                      isRunning ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                    }`}
+                  >
+                    {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                    {isRunning ? 'Pause' : 'Start'}
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded font-medium transition-colors flex items-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reset
+                  </button>
+                </div>
+                <div className="text-sm text-slate-300">
+                  Objects: {simState.current.objects.length}
+                </div>
+              </div>
+            </div>
+
+            {/* Info Panel */}
+            {showInfo && (
+              <div className="mt-4 bg-slate-800 rounded-lg p-4">
+                <h3 className="font-semibold mb-2 flex items-center gap-2">
+                  <Info className="w-5 h-5 text-blue-400" />
+                  How It Works
+                </h3>
+                <p className="text-sm text-slate-300 mb-2">
+                  This simulation explores hypothetical antigravity concepts using simplified physics:
+                </p>
+                <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
+                  <li>Adjust gravity strength to change the downward force</li>
+                  <li>Increase antigravity power to counteract gravity</li>
+                  <li>When antigravity exceeds gravity, objects float upward</li>
+                  <li>Energy consumption increases with antigravity power</li>
+                  <li>Stability measures how controlled the motion is</li>
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Control Panel */}
+          <div className="space-y-4">
+            {/* Add Objects */}
+            <div className="bg-slate-800 rounded-lg p-4">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-purple-400" />
+                Add Objects
+              </h3>
+              <div className="space-y-3">
+                <select
+                  value={selectedObject}
+                  onChange={(e) => setSelectedObject(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                >
+                  <option value="sphere">Sphere (Light)</option>
+                  <option value="cube">Cube (Heavy)</option>
+                  <option value="pyramid">Pyramid (Medium)</option>
+                </select>
+                <button
+                  onClick={addObject}
+                  className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-medium transition-colors"
+                >
+                  Add Object
+                </button>
+              </div>
+            </div>
+
+            {/* Physics Controls */}
+            <div className="bg-slate-800 rounded-lg p-4">
+              <h3 className="font-semibold mb-3">Physics Parameters</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm mb-2 flex items-center justify-between">
+                    <span>Gravity Strength</span>
+                    <span className="text-blue-400">{gravityStrength.toFixed(1)} m/s²</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step="0.1"
+                    value={gravityStrength}
+                    onChange={(e) => setGravityStrength(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm mb-2 flex items-center justify-between">
+                    <span>Antigravity Power</span>
+                    <span className="text-purple-400">{antigravityPower.toFixed(1)} units</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="15"
+                    step="0.1"
+                    value={antigravityPower}
+                    onChange={(e) => setAntigravityPower(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* AI Predictions */}
+            <div className="bg-slate-800 rounded-lg p-4">
+              <h3 className="font-semibold mb-3">AI Optimization</h3>
+              <button
+                onClick={predictOptimal}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-4 py-2 rounded font-medium transition-colors mb-3"
+              >
+                Predict Optimal Settings
+              </button>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Energy Used:</span>
+                  <span className="text-yellow-400 font-mono">{energy} kWh</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Stability:</span>
+                  <span className={`font-mono ${stability > 70 ? 'text-green-400' : stability > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {stability}%
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Net Force:</span>
+                  <span className="font-mono text-purple-400">
+                    {(gravityStrength - antigravityPower).toFixed(1)} m/s²
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Status */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg p-4 border border-slate-600">
+              <h3 className="font-semibold mb-2">System Status</h3>
+              <div className="text-sm space-y-1 text-slate-300">
+                <p>⚡ Simulation: {isRunning ? 'Running' : 'Paused'}</p>
+                <p>🎯 Mode: {antigravityPower > gravityStrength ? 'Antigravity' : 'Normal Gravity'}</p>
+                <p>🔬 Physics: Newtonian + ML</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AntigravityLab;
